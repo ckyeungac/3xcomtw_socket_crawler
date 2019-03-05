@@ -137,7 +137,7 @@ product = args.product
 def json_serial(obj):
     if isinstance(obj, (datetime.date, datetime.datetime)):
         return obj.isoformat()
-    if isinstance(obj, uuid.uuid4):
+    if isinstance(obj, uuid.UUID):
         return obj.hex
 
 def get_trade_datetime(t):
