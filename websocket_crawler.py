@@ -58,7 +58,7 @@ db = client['trading']
 tr_collection = db['trade_records']
 
 ###############################################
-#                   Timezone                  #
+#                  data dict                  #
 ###############################################
 product_timezone = {
     'HSI': pytz.timezone('Asia/Hong_Kong'),  # Heng Seng
@@ -72,6 +72,20 @@ product_timezone = {
     'WTX': pytz.timezone('Asia/Taipei'),  # Taiwan
     'M1NQ': pytz.timezone('America/Chicago'),  # NasDaq
     'M1ES': pytz.timezone('America/Chicago'),  # SP500
+}
+
+product_name = {
+    'HSI': "亞洲期指",  # Heng Seng
+    'HSCE': "亞企期指",  # 
+    'IF300': "滬深期指",  # Shanghai and Shenzhen index
+    'S2SFC': "A50",  # A50
+    'O1GC': "紐約期金",  # Gold
+    'M1EC': "歐元期貨",  # Euro
+    'B1YM': "迷你道瓊",  # Mini Dow Jones
+    'N1CL': "小輕原油",  # Oil
+    'WTX': "台灣期指",  # Taiwan
+    'M1NQ': "NasDaq",  # NasDaq
+    'M1ES': "SP500",  # SP500
 }
 
 ###############################################
@@ -106,7 +120,6 @@ def get_trade_datetime(t):
 
 # send ws query every 30 seconds
 def check(ws):
-    global product
     while True:
         now = int(time.time())
     
@@ -177,7 +190,9 @@ def on_message(ws, message):
             trade_record = dict()
             trade_record['uuid'] = uuid.uuid4()
             trade_record['product_id'] = data[0]
+            trade_record['product_name'] = product_name[product]
             trade_record['datetime'] = get_trade_datetime(data[1])
+            trade_record['datetime_str'] = trade_record['datetime'].isoformat()
             trade_record['ask_price'] = int(data[2]) / 10.**price_dot
             trade_record['bid_price'] = int(data[3]) / 10.**price_dot
             trade_record['exercise_price'] = int(data[4]) / 10.**price_dot
