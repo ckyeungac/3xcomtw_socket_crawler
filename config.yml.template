@@ -1,0 +1,4 @@
+mongodb:
+  url: <url>
+  user: <user>
+  password: <password>
