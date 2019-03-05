@@ -1,0 +1,5 @@
+mongodb:
+  address: <address>
+  username: <username>
+  password: <password>
+  authSource: <authSource>

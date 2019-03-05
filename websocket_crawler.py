@@ -1,22 +1,26 @@
 import argparse
-import websocket
-import json
-import time
 import datetime
+import json
 import logging
 from multiprocessing import Process, Manager
-import pytz
-
-import uuid
 from pymongo import MongoClient
+import pytz
+import time
+import websocket
+import yaml
+import uuid
 
+###############################################
+#                 Configuration               #
+###############################################
+with open('config.yml', 'r') as f:
+    config = yaml.load(f)
 
 ###############################################
 #                   Argparser                 #
 ###############################################
 parser = argparse.ArgumentParser()
 parser.add_argument("--product", type=str, default="O1GC")
-parser.add_argument("--db_url", type=str, default='mongodb://localhost:27017/')
 args = parser.parse_args()
 
 # create logger with 'spam_application'
@@ -44,8 +48,12 @@ checker_process = None
 #                    Database                 #
 ###############################################
 # Database settings
-db_url = args.db_url
-client = MongoClient(db_url)
+client = MongoClient(
+    config['mongodb']['address'],
+    username=config['mongodb']['username'],
+    password=config['mongodb']['password'],
+    authSource=config['mongodb']['authSource']
+)
 db = client['trading']
 tr_collection = db['trade_records']
 
