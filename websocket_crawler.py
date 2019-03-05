@@ -1,14 +1,18 @@
 import argparse
-import websocket
-import json
-import time
 import datetime
+import json
 import logging
 from multiprocessing import Process, Manager
-import pytz
-
-import uuid
 from pymongo import MongoClient
+import pytz
+import time
+import websocket
+import yaml
+import uuid
+
+###############################################
+#                 Configuration               #
+###############################################
 
 
 ###############################################
