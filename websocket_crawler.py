@@ -191,8 +191,8 @@ def on_message(ws, message):
     global price_dot
     global last_volume
     
+    logger.info(message[:256])
     message = json.loads(message)
-    logger.info(message)
     
     if message.get('t') == 'GN':
         d = message.get('d')
@@ -203,6 +203,7 @@ def on_message(ws, message):
             trade_record = dict()
             trade_record['uuid'] = uuid.uuid4()
             trade_record['product_id'] = data[0]
+            trade_record['product_code'] = product
             trade_record['product_name'] = product_name[product]
             trade_record['datetime'] = get_trade_datetime(data[1])
             trade_record['datetime_str'] = trade_record['datetime'].isoformat()
