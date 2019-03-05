@@ -103,6 +103,14 @@ def json_serial(obj):
         return obj.hex
 
 def get_trade_datetime(t):
+    """
+    Receive time in format 'HH:MM:SS'. Convert it to a datetime object.
+    Arguments:
+      - t: str
+    
+    Return:
+      - trade_datetime: datetime object with timezone information
+    """
     global product
     global product_timezone
 
@@ -112,14 +120,29 @@ def get_trade_datetime(t):
     trade_second = int(trade_time[2])
     
     trade_datetime = datetime.datetime.now(product_timezone[product])
-    trade_datetime = trade_datetime.replace(
-        hour=trade_hour, minute=trade_minute, second=trade_second
-    )
+
+    # avoid edge cases
+    _hour = trade_datetime.hour
+    if _hour == 0 and trade_hour == 23:
+        trade_datetime = trade_datetime.replace(
+            hour=trade_hour, minute=trade_minute, second=trade_second
+        )
+        trade_datetime = trade_datetime - datetime.timedelta(days=1)
+    else:
+        trade_datetime = trade_datetime.replace(
+            hour=trade_hour, minute=trade_minute, second=trade_second
+        )
     
     return trade_datetime
 
 # send ws query every 30 seconds
 def check(ws):
+    """
+    When we send 
+        - {"t":"GL","p":"<$code>"}, and
+        - {"t": "GPV"}
+    to the websocket of m.3x.com.tw:5490, we will get each trade data of the <$code>
+    """
     while True:
         now = int(time.time())
     
@@ -135,31 +158,17 @@ def check(ws):
 
 def on_open(ws):
     """
-    When we send 
-        - {"t":"GL","p":"<$code>"}, and
-        - {"t": "GPV"}
-    to the websocket of m.3x.com.tw:5490, we will get each trade data of the <$code>
-    
-    <$code> can be
-        - "HSI" - 亞洲期指 (depecated)
-        - "HSCE" - 亞企期指 (depecated)
-        - "IF300" - 滬深期指
-        - "S2SFC" - A50
-        - "O1GC" - 紐約期金
-        - "M1EC" - 歐元期貨
-        - "B1YM" - 迷你道瓊
-        - "N1CL" - 小輕原油
-        - "WTX" - 台灣期指
-        - "M1NQ" - NasDaq
-        - "M1ES" - SP500
+    start listening to the websocket
     """
-
     # Checker Process
     global checker_process
     checker_process = Process(target=check, args=(ws,))
     checker_process.start()
 
 def on_close(ws):
+    """
+    close the websocket
+    """
     global checker_process
     if checker_process:
         checker_process.join(3)  # wait for this process to complete for 3 seconds
@@ -170,11 +179,14 @@ def on_error(ws, error):
     
 def on_message(ws, message):
     """
-    The message are of important is of "GN". Here is an example:
+    The message that is of important is of type "GN". Here is an example:
     {'d': 'O1GCJ|11:31:44|13046|13044|13046|220834|', 't': 'GN'}
     
     This can be interpreted as
-    {'d': '<prod_id>|<prod_time_info>|<ask_price>|<bid_price>|<exercise_price>|<total_volume>|', 't': 'GN'}
+    {
+        'd': '<prod_id>|<trade_time>|<ask_price>|<bid_price>|<exercise_price>|<total_volume>|', 
+        't': 'GN'
+    }
     """
     global price_dot
     global last_volume
