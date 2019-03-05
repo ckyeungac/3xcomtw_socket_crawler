@@ -1,4 +1,5 @@
 mongodb:
-  url: <url>
-  user: <user>
+  address: <address>
+  username: <username>
   password: <password>
+  authSource: <authSource>
