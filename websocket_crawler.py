@@ -5,6 +5,7 @@ import time
 import datetime
 import logging
 from multiprocessing import Process, Manager
+import pytz
 
 import sqlalchemy as sa
 from sqlalchemy import create_engine
@@ -109,6 +110,23 @@ class TradeRecord(Base):
 Base.metadata.create_all(bind=engine)
 
 ###############################################
+#                   Timezone                  #
+###############################################
+product_timezone = {
+    'HSI': pytz.timezone('Asia/Hong_Kong'),  # Heng Seng
+    'HSCE': pytz.timezone('Asia/Hong_Kong'),  # 
+    'IF300': pytz.timezone('Asia/Hong_Kong'),  # Shanghai and Shenzhen index
+    'S2SFC': pytz.timezone('Asia/Hong_Kong'),  # A50
+    'O1GC': pytz.timezone('America/New_York'),  # Gold
+    'M1EC': pytz.timezone('America/Chicago'),  # Euro
+    'B1YM': pytz.timezone('America/Chicago'),  # Mini Dow Jones
+    'N1CL': pytz.timezone('America/New_York'),  # Oil
+    'WTX': pytz.timezone('Asia/Taipei'),  # Taiwan
+    'M1NQ': pytz.timezone('America/Chicago'),  # NasDaq
+    'M1ES': pytz.timezone('America/Chicago'),  # SP500
+}
+
+###############################################
 #                   Websocket                 #
 ###############################################
 # Listening to websocket
@@ -123,16 +141,15 @@ def json_serial(obj):
         return obj.hex
 
 def get_trade_datetime(t):
-    trade_time = t.split(':')
+    global product
+    global product_timezone
+
+    trade_time = t.split(':')  # HH:MM:SS
     trade_hour = int(trade_time[0])
     trade_minute = int(trade_time[1])
     trade_second = int(trade_time[2])
     
-    trade_datetime = datetime.datetime.now()
-    curr_hour = trade_datetime.hour
-    # TODO: use timezone infomation instead of hard rule
-    if curr_hour < trade_hour:
-        trade_datetime = trade_datetime - datetime.timedelta(days=1)
+    trade_datetime = datetime.datetime.now(product_timezone[product])
     trade_datetime = trade_datetime.replace(
         hour=trade_hour, minute=trade_minute, second=trade_second
     )
@@ -240,9 +257,12 @@ def on_message(ws, message):
         d = message.get('d')
         if d is not None and len(d.split('|')) == 9:
             data = d.split('|')
+
+            # update the updated volume
             _last_volume = int(data[2])
             if _last_volume > last_volume:
                 last_volume = _last_volume
+
 
 if __name__ == "__main__":
     websocket.enableTrace(True)
