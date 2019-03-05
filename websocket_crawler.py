@@ -4,12 +4,12 @@ import datetime
 import json
 import logging
 from multiprocessing import Process, Manager
-from pymongo import MongoClient
 import pytz
 import time
 import websocket
 import yaml
 import uuid
+from pymongo import MongoClient
 
 ###############################################
 #                 Configuration               #
