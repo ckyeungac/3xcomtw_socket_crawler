@@ -185,6 +185,7 @@ def on_message(ws, message):
     if message.get('t') == 'GN':
         d = message.get('d')
         if d is not None and len(d.split('|')) == 7:
+            start_time = time.time()
             data = d.split('|')
         
             trade_record = dict()
@@ -203,7 +204,9 @@ def on_message(ws, message):
             
             # save to database
             trade_record_id = tr_collection.insert_one(trade_record).inserted_id
-            logger.info("{}, Inserted to mongoDB with id {}".format(trade_record, trade_record_id))
+            logger.info("{}, Inserted to mongoDB with id {}. (Time used: {:.3}ms)".format(
+                trade_record, trade_record_id, (time.time() - start_time) * 1000)
+            )
 
     elif message.get('t') == 'GL':
         price_dot = float(message.get('pd', 0.0))
