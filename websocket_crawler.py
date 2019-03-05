@@ -7,21 +7,16 @@ import logging
 from multiprocessing import Process, Manager
 import pytz
 
-import sqlalchemy as sa
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.dialects.mysql import BINARY
-from sqlalchemy.types import TypeDecorator
-import pymysql
 import uuid
+from pymongo import MongoClient
+
 
 ###############################################
 #                   Argparser                 #
 ###############################################
 parser = argparse.ArgumentParser()
 parser.add_argument("--product", type=str, default="O1GC")
-parser.add_argument("--db_url", type=str, default='sqlite:///trade_records.db')
+parser.add_argument("--db_url", type=str, default='mongodb://localhost:27017/')
 args = parser.parse_args()
 
 # create logger with 'spam_application'
@@ -45,69 +40,14 @@ shared_dict['last_check_time'] = time.time()
 # Process 
 checker_process = None
 
-
 ###############################################
 #                    Database                 #
 ###############################################
 # Database settings
 db_url = args.db_url
-engine = create_engine(db_url, echo=True)
-Session = sessionmaker(bind=engine)
-Base = declarative_base()
-
-class BinaryUUID(TypeDecorator):
-    '''Optimize UUID keys. Store as 16 bit binary, retrieve as uuid.
-    inspired by:
-        http://mysqlserverteam.com/storing-uuid-values-in-mysql-tables/
-    '''
-    
-    impl = BINARY(16)
-    
-    def process_bind_param(self, value, dialect=None):
-        if value and isinstance(value, uuid.UUID):
-            return value.bytes
-        elif value and not isinstance(value, uuid.UUID):
-            raise ValueError('value {} is not a valid uuid.UUID'.format(value))
-        else:
-            return None
-                
-    def process_result_value(self, value, dialect):
-        if value:
-            return uuid.UUID(bytes=value)
-        else:
-            return None
-    
-    def is_mutable(self):
-        return False
-    
-class TradeRecord(Base):
-    __tablename__ = 'trade_record'
-    # id for the trade record
-    uuid = sa.Column('uuid', BinaryUUID, primary_key=True, default=uuid.uuid4)
-    
-    # attributes of a trade record
-    product_id = sa.Column('product_id', sa.String(20), nullable=False)
-    datetime = sa.Column('datetime', sa.DateTime, nullable=False)
-    timestamp = sa.Column('timestamp', sa.Integer, nullable=False)
-    ask_price = sa.Column('ask_price', sa.Float, nullable=False)
-    bid_price = sa.Column('bid_price', sa.Float, nullable=False)
-    exercise_price = sa.Column('exercise_price', sa.Float, nullable=False)
-    amount = sa.Column('amount', sa.Integer, nullable=False)
-    volume = sa.Column('volume', sa.Integer, nullable=False)
-    
-    def __init__(self, trade_record):
-        self.uuid = trade_record.get('uuid', uuid.uuid4())
-        self.product_id = trade_record['product_id']
-        self.datetime = trade_record['datetime']
-        self.timestamp = int(trade_record['datetime'].timestamp())
-        self.ask_price = trade_record['ask_price']
-        self.bid_price = trade_record['bid_price']
-        self.exercise_price = trade_record['exercise_price']
-        self.amount = trade_record['amount']
-        self.volume = trade_record['volume']
-
-# create database if not exist
-Base.metadata.create_all(bind=engine)
+client = MongoClient(db_url)
+db = client['trading']
+tr_collection = db['trade_records']
 
 ###############################################
 #                   Timezone                  #
@@ -161,7 +101,6 @@ def check(ws):
     global product
     while True:
         now = int(time.time())
-        time_pass = now - shared_dict['last_check_time']
     
         start_up_msg1 = '{"t":"GL","p":"%s"}' % product
         start_up_msg2 = '{"t":"GPV"}'
@@ -202,7 +141,7 @@ def on_open(ws):
 def on_close(ws):
     global checker_process
     if checker_process:
-        checker_process.join(3)
+        checker_process.join(3)  # wait for this process to complete for 3 seconds
     logger.info("### closed ###")
 
 def on_error(ws, error):
@@ -239,20 +178,12 @@ def on_message(ws, message):
             trade_record['amount'] = curr_volume - last_volume
             last_volume = curr_volume
             
-            # save to csv
-            with open('trade_records.json', 'a') as f:
-                json.dump(trade_record, f, sort_keys=True, default=json_serial)
-                f.write("\n")
-            
             # save to database
-            session = Session()
-            _trade_record = TradeRecord(trade_record)
-            session.add(_trade_record)
-            session.commit()
-            session.close()
+            trade_record_id = tr_collection.insert_one(trade_record).inserted_id
+            logger.info("{}, Inserted to mongoDB with id {}".format(trade_record, trade_record_id))
+
     elif message.get('t') == 'GL':
         price_dot = float(message.get('pd', 0.0))
-    # TODO: need better update on the last_volume
     elif message.get('t') == 'GD':
         d = message.get('d')
         if d is not None and len(d.split('|')) == 9:
