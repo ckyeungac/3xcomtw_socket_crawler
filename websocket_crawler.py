@@ -1,4 +1,5 @@
 import argparse
+from collections import deque
 import datetime
 import json
 import logging
@@ -95,6 +96,7 @@ product_name = {
 price_dot = 0.0
 last_volume = 0
 product = args.product
+recent_trade_records = deque(maxlen=5)
 
 def json_serial(obj):
     if isinstance(obj, (datetime.date, datetime.datetime)):
@@ -199,19 +201,34 @@ def on_message(ws, message):
         if d is not None and len(d.split('|')) == 7:
             start_time = time.time()
             data = d.split('|')
-        
             trade_record = dict()
             trade_record['uuid'] = uuid.uuid4()
+
+            # trade info
             trade_record['product_id'] = data[0]
             trade_record['product_code'] = product
             trade_record['product_name'] = product_name[product]
             trade_record['datetime'] = get_trade_datetime(data[1])
             trade_record['datetime_str'] = trade_record['datetime'].isoformat()
+
+            # trade detail
             trade_record['ask_price'] = int(data[2]) / 10.**price_dot
             trade_record['bid_price'] = int(data[3]) / 10.**price_dot
             trade_record['exercise_price'] = int(data[4]) / 10.**price_dot
+
+            # total volume upto this trade
             curr_volume = int(data[5])
             trade_record['volume'] = curr_volume
+
+            # TODO: inconsistent time
+            # amount of this trade
+            if curr_volume == last_volume and len(recent_trade_records) != 0:
+                # race condition occurs with the data from 'GD', use the last record
+                last_trade_record = recent_trade_records[-1]
+                last_volume = last_trade_record['volume']
+            elif last_volume > curr_volume:
+                # assume it happens only when it starts a new trade history
+                last_volume = 0
             trade_record['amount'] = curr_volume - last_volume
             last_volume = curr_volume
             
@@ -221,6 +238,9 @@ def on_message(ws, message):
                 trade_record, trade_record_id, (time.time() - start_time) * 1000)
             )
 
+            # append to the deque
+            recent_trade_records.append(trade_record)
+
     elif message.get('t') == 'GL':
         price_dot = float(message.get('pd', 0.0))
     elif message.get('t') == 'GD':
@@ -228,7 +248,7 @@ def on_message(ws, message):
         if d is not None and len(d.split('|')) == 9:
             data = d.split('|')
 
-            # update the updated volume
+            # update the updated volume in case the program miss some records
             _last_volume = int(data[2])
             if _last_volume > last_volume:
                 last_volume = _last_volume
@@ -243,5 +263,3 @@ if __name__ == "__main__":
         on_error=on_error,
     )
     ws.run_forever()
-
-
