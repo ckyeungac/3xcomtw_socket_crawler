@@ -129,12 +129,12 @@ def get_trade_datetime(t):
     _hour = trade_datetime.hour
     if _hour == 0 and trade_hour == 23:
         trade_datetime = trade_datetime.replace(
-            hour=trade_hour, minute=trade_minute, second=trade_second, microsecond=1
+            hour=trade_hour, minute=trade_minute, second=trade_second, microsecond=100
         )
         trade_datetime = trade_datetime - datetime.timedelta(days=1)
     else:
         trade_datetime = trade_datetime.replace(
-            hour=trade_hour, minute=trade_minute, second=trade_second, microsecond=1
+            hour=trade_hour, minute=trade_minute, second=trade_second, microsecond=100
         )
 
     # keep the ordering
@@ -144,7 +144,7 @@ def get_trade_datetime(t):
         _trade_datetime = trade_datetime.replace(microsecond=0)
         if _trade_datetime == _last_trade_datetime:
             trade_datetime = trade_datetime.replace(
-                microsecond=last_trade_datetime.microsecond + 1
+                microsecond=last_trade_datetime.microsecond + 100
             )
     
     return trade_datetime
