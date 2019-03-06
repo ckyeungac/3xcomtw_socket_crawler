@@ -6,7 +6,6 @@ This is a crawler that listens to the websocket of [3x.com.tw](3x.com.tw).
 
 ## Todo
 
-- Fix the datetime ordering of trade
 - Fix the boken pipeline happen when the web socket close in new trade day.
 - Continous integration and deployment of the crawler
   - How can we keep crawl the data without duplication or missing during deployment?

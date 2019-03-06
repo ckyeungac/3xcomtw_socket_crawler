@@ -24,13 +24,18 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--product", type=str, default="O1GC")
 args = parser.parse_args()
 
-# create logger with 'spam_application'
+# create logger
 logger = logging.getLogger('3xdotcom_websocket_crawler')
 logger.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s -  %(message)s')
+# create file handler which logs even debug messages
+fh = logging.FileHandler('./logs/{}.log'.format(args.product))
+fh.setLevel(logging.ERROR)
+fh.setFormatter(formatter)
+logger.addHandler(fh)
 # create console handler with a higher log level
 ch = logging.StreamHandler()
 ch.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s -  %(message)s')
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
@@ -113,9 +118,6 @@ def get_trade_datetime(t):
     Return:
       - trade_datetime: datetime object with timezone information
     """
-    global product
-    global product_timezone
-
     trade_time = t.split(':')  # HH:MM:SS
     trade_hour = int(trade_time[0])
     trade_minute = int(trade_time[1])
@@ -127,36 +129,50 @@ def get_trade_datetime(t):
     _hour = trade_datetime.hour
     if _hour == 0 and trade_hour == 23:
         trade_datetime = trade_datetime.replace(
-            hour=trade_hour, minute=trade_minute, second=trade_second
+            hour=trade_hour, minute=trade_minute, second=trade_second, microsecond=1
         )
         trade_datetime = trade_datetime - datetime.timedelta(days=1)
     else:
         trade_datetime = trade_datetime.replace(
-            hour=trade_hour, minute=trade_minute, second=trade_second
+            hour=trade_hour, minute=trade_minute, second=trade_second, microsecond=1
+        )
+
+    # keep the ordering
+    last_trade_datetime = recent_trade_records[-1]['datetime']
+    _last_trade_datetime = last_trade_datetime.replace(microsecond=0)
+    _trade_datetime = trade_datetime.replace(microsecond=0)
+    if _trade_datetime == _last_trade_datetime:
+        trade_datetime = trade_datetime.replace(
+            microsecond=last_trade_datetime.microsecond + 1
         )
     
     return trade_datetime
 
-# send ws query every 30 seconds
+# send ws query every 60 seconds
 def check(ws):
     """
     When we send 
         - {"t":"GL","p":"<$code>"}, and
         - {"t": "GPV"}
-    to the websocket of m.3x.com.tw:5490, we will get each trade data of the <$code>
+    to the websocket of m.3x.com.tw:5490, we will get each trade data of the product_code
     """
     while True:
-        now = int(time.time())
-    
-        start_up_msg1 = '{"t":"GL","p":"%s"}' % product
-        start_up_msg2 = '{"t":"GPV"}'
-        ws.send(start_up_msg1)
-        ws.send(start_up_msg2)
-        logger.info("ws.send({})".format(start_up_msg1))
-        logger.info("ws.send({})".format(start_up_msg2))
+        try:
+            now = int(time.time())
+        
+            start_up_msg1 = '{"t":"GL","p":"%s"}' % product
+            start_up_msg2 = '{"t":"GPV"}'
+            ws.send(start_up_msg1)
+            ws.send(start_up_msg2)
+            logger.info("ws.send({})".format(start_up_msg1))
+            logger.info("ws.send({})".format(start_up_msg2))
 
-        shared_dict['last_check_time'] = now
-        time.sleep(30)
+            shared_dict['last_check_time'] = now
+            time.sleep(60)
+        except BrokenPipeError as e:
+            logger.error("BrokenPipeError: {}".format(e))
+            ws.close()
+            break
 
 def on_open(ws):
     """
@@ -220,18 +236,21 @@ def on_message(ws, message):
             curr_volume = int(data[5])
             trade_record['volume'] = curr_volume
 
-            # TODO: inconsistent time
             # amount of this trade
             if curr_volume == last_volume and len(recent_trade_records) != 0:
                 # race condition occurs with the data from 'GD', use the last record
-                last_trade_record = recent_trade_records[-1]
-                last_volume = last_trade_record['volume']
-            elif last_volume > curr_volume:
+                last_volume = recent_trade_records[-1]['volume']
+            elif last_volume > curr_volume and \
+                trade_record['datetime'] > recent_trade_records[-1]['datetime']:
                 # assume it happens only when it starts a new trade history
                 last_volume = 0
             trade_record['amount'] = curr_volume - last_volume
             last_volume = curr_volume
             
+            # TODO: custom measurments
+            if False:
+                pass
+
             # save to database
             trade_record_id = tr_collection.insert_one(trade_record).inserted_id
             logger.info("{}, Inserted to mongoDB with id {}. (Time used: {:.3}ms)".format(
@@ -261,5 +280,6 @@ if __name__ == "__main__":
         on_open=on_open,
         on_message=on_message,
         on_error=on_error,
+        on_close=on_close
     )
     ws.run_forever()
