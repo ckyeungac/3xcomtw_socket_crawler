@@ -106,3 +106,4 @@ venv.bak/
 # config
 *config.yml
 .vscode/
+notebooks/
