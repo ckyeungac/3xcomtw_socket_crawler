@@ -138,13 +138,14 @@ def get_trade_datetime(t):
         )
 
     # keep the ordering
-    last_trade_datetime = recent_trade_records[-1]['datetime']
-    _last_trade_datetime = last_trade_datetime.replace(microsecond=0)
-    _trade_datetime = trade_datetime.replace(microsecond=0)
-    if _trade_datetime == _last_trade_datetime:
-        trade_datetime = trade_datetime.replace(
-            microsecond=last_trade_datetime.microsecond + 1
-        )
+    if len(recent_trade_records) != 0:
+        last_trade_datetime = recent_trade_records[-1]['datetime']
+        _last_trade_datetime = last_trade_datetime.replace(microsecond=0)
+        _trade_datetime = trade_datetime.replace(microsecond=0)
+        if _trade_datetime == _last_trade_datetime:
+            trade_datetime = trade_datetime.replace(
+                microsecond=last_trade_datetime.microsecond + 1
+            )
     
     return trade_datetime
 
