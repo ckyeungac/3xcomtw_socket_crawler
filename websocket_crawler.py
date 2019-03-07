@@ -180,9 +180,15 @@ def on_open(ws):
     start listening to the websocket
     """
     # Checker Process
-    global checker_process
-    checker_process = Process(target=check, args=(ws,))
-    checker_process.start()
+    # global checker_process
+    # checker_process = Process(target=check, args=(ws,))
+    # checker_process.start()
+    start_up_msg1 = '{"t":"GL","p":"%s"}' % product
+    start_up_msg2 = '{"t":"GPV"}'
+    ws.send(start_up_msg1)
+    ws.send(start_up_msg2)
+    logger.info("ws.send({})".format(start_up_msg1))
+    logger.info("ws.send({})".format(start_up_msg2))
 
 def on_close(ws):
     """
