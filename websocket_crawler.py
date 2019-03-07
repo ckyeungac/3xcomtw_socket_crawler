@@ -30,7 +30,7 @@ logger.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s -  %(message)s')
 # create file handler which logs even debug messages
 fh = logging.FileHandler('./logs/{}.log'.format(args.product))
-fh.setLevel(logging.ERROR)
+fh.setLevel(logging.INFO)
 fh.setFormatter(formatter)
 logger.addHandler(fh)
 # create console handler with a higher log level
@@ -192,9 +192,6 @@ def on_close(ws):
     if checker_process:
         checker_process.join(3)  # wait for this process to complete for 3 seconds
     logger.info("### closed ###")
-
-def on_error(ws, error):
-    logger.error(error)
     
 def on_message(ws, message):
     """
@@ -210,7 +207,7 @@ def on_message(ws, message):
     global price_dot
     global last_volume
     
-    logger.info(message[:256])
+    logger.debug(message[:256])
     message = json.loads(message)
     
     if message.get('t') == 'GN':
@@ -273,6 +270,30 @@ def on_message(ws, message):
             if _last_volume > last_volume:
                 last_volume = _last_volume
 
+def on_error(ws, error):
+    logger.error(error)
+    if str(error) == 'Connection is already closed.':
+        # remove ws before try to recreating the websocket
+        if ws is not None:
+            ws.close()
+            ws.on_message = None
+            ws.on_open = None
+            ws.close = None
+            logger.info("Deleting ws")
+            del ws
+        ws = None  # Forcebly set ws to None
+
+        # try recreating the websocket
+        logger.info("Try to reconnect the websocket")
+        ws = websocket.WebSocketApp(
+            "ws://m.3x.com.tw:5490",
+            on_open=on_open,
+            on_message=on_message,
+            on_error=on_error,
+            on_close=on_close
+        )
+        time.sleep(1)  # wait for 1 second to start the ws
+        ws.run_forever()
 
 if __name__ == "__main__":
     websocket.enableTrace(True)
@@ -283,4 +304,5 @@ if __name__ == "__main__":
         on_error=on_error,
         on_close=on_close
     )
+    logger.info("Run websocket")
     ws.run_forever()
