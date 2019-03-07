@@ -172,7 +172,8 @@ def check(ws):
             time.sleep(60)
         except BrokenPipeError as e:
             logger.error("BrokenPipeError: {}".format(e))
-            time.sleep(300)  # retry after 5 minutes
+            ws.close()
+            break
 
 def on_open(ws):
     """
