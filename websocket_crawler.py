@@ -251,7 +251,7 @@ def on_message(ws, message):
 
             # save to database
             trade_record_id = tr_collection.insert_one(trade_record).inserted_id
-            logger.info("{}, Inserted to mongoDB with id {}. (Time used: {:.3}ms)".format(
+            logger.debug("{}, Inserted to mongoDB with id {}. (Time used: {:.3}ms)".format(
                 trade_record, trade_record_id, (time.time() - start_time) * 1000)
             )
 
