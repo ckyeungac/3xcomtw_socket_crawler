@@ -40,17 +40,6 @@ ch.setFormatter(formatter)
 logger.addHandler(ch)
 
 ###############################################
-#                 Multithreading              #
-###############################################
-# Shared memory between process
-manager = Manager()
-shared_dict = manager.dict()
-shared_dict['last_check_time'] = time.time()
-
-# Process 
-checker_process = None
-
-###############################################
 #                    Database                 #
 ###############################################
 # Database settings
@@ -148,32 +137,6 @@ def get_trade_datetime(t):
             )
     
     return trade_datetime
-
-# send ws query every 60 seconds
-def check(ws):
-    """
-    When we send 
-        - {"t":"GL","p":"<$code>"}, and
-        - {"t": "GPV"}
-    to the websocket of m.3x.com.tw:5490, we will get each trade data of the product_code
-    """
-    while True:
-        try:
-            now = int(time.time())
-        
-            start_up_msg1 = '{"t":"GL","p":"%s"}' % product
-            start_up_msg2 = '{"t":"GPV"}'
-            ws.send(start_up_msg1)
-            ws.send(start_up_msg2)
-            logger.info("ws.send({})".format(start_up_msg1))
-            logger.info("ws.send({})".format(start_up_msg2))
-
-            shared_dict['last_check_time'] = now
-            time.sleep(60)
-        except BrokenPipeError as e:
-            logger.error("BrokenPipeError: {}".format(e))
-            ws.close()
-            break
 
 def on_open(ws):
     """
@@ -278,28 +241,6 @@ def on_message(ws, message):
 
 def on_error(ws, error):
     logger.error(error)
-    if str(error) == 'Connection is already closed.':
-        # remove ws before try to recreating the websocket
-        if ws is not None:
-            ws.close()
-            ws.on_message = None
-            ws.on_open = None
-            ws.close = None
-            logger.info("Deleting ws")
-            del ws
-        ws = None  # Forcebly set ws to None
-
-        # try recreating the websocket
-        logger.info("Try to reconnect the websocket")
-        ws = websocket.WebSocketApp(
-            "ws://m.3x.com.tw:5490",
-            on_open=on_open,
-            on_message=on_message,
-            on_error=on_error,
-            on_close=on_close
-        )
-        time.sleep(1)  # wait for 1 second to start the ws
-        ws.run_forever()
 
 if __name__ == "__main__":
     websocket.enableTrace(True)
@@ -310,5 +251,6 @@ if __name__ == "__main__":
         on_error=on_error,
         on_close=on_close
     )
-    logger.info("Run websocket")
-    ws.run_forever()
+    while True:
+        logger.info("Run websocket")
+        ws.run_forever()

@@ -7,6 +7,9 @@ This is a crawler that listens to the websocket of [3x.com.tw](3x.com.tw).
 ## Todo
 
 - Fix the boken pipeline happen when the web socket close in new trade day.
+  - Potential solutions:
+    - Recreate a websocket application after disconnection. (Implemented now.)
+    - Use cron to schedule the crawler. 
 - Continous integration and deployment of the crawler
   - How can we keep crawl the data without duplication or missing during deployment?
   - How can we update the trade data when we implement new measurements?
