@@ -9,6 +9,7 @@ import time
 import websocket
 import yaml
 import uuid
+from pymongo.errors import DuplicateKeyError
 from pymongo import MongoClient
 
 ###############################################
@@ -88,7 +89,7 @@ product_name = {
 ###############################################
 # Listening to websocket
 price_dot = 0.0
-last_volume = 0
+last_volume = 0.0
 product = args.product
 recent_trade_records = deque(maxlen=5)
 
@@ -138,14 +139,84 @@ def get_trade_datetime(t):
     
     return trade_datetime
 
+def process_trade_data(trade_data):
+    """
+    Parameters:
+        - trade_data: str
+            e.g., 'O1GCJ|11:31:44|13046|13044|13046|220834|'
+    """
+    assert isinstance(trade_data, str), "String is expected"
+    assert len(trade_data.split('|')) == 7, "Format of '<prod_id>|<trade_time>|<ask_price>|<bid_price>|<exercise_price>|<total_volume>|' is expected."
+
+    global price_dot
+    global last_volume
+
+    # initialization
+    data = trade_data.split('|')
+    trade_record = dict()
+    trade_record['uuid'] = uuid.uuid4()
+
+    # trade info
+    trade_record['product_id'] = data[0]
+    trade_record['product_code'] = product
+    trade_record['product_name'] = product_name[product]
+    trade_record['datetime'] = get_trade_datetime(data[1])
+    trade_record['datetime_str'] = trade_record['datetime'].isoformat()
+
+    # trade detail
+    trade_record['ask_price'] = int(data[2]) / 10.**price_dot
+    trade_record['bid_price'] = int(data[3]) / 10.**price_dot
+    trade_record['exercise_price'] = int(data[4]) / 10.**price_dot
+
+    # total volume upto this trade
+    curr_volume = int(data[5])
+    trade_record['volume'] = curr_volume
+
+    # amount of this trade
+    if len(recent_trade_records) != 0:
+        if curr_volume == last_volume:
+            # race condition occurs with the data from 'GD', use the last record
+            last_volume = recent_trade_records[-1]['volume']
+        elif trade_record['datetime'] > recent_trade_records[-1]['datetime']\
+            and last_volume > curr_volume:
+            # assume it happens only when it starts a new trade history
+            # so set the last_volume to 0
+            last_volume = 0.0
+    trade_record['amount'] = curr_volume - last_volume
+    last_volume = curr_volume
+    
+    # TODO: custom measurments
+    if False:
+        pass
+
+    return trade_record
+
+def save_trade_data(trade_data):
+    global recent_trade_records
+
+    start_time = time.time()
+    trade_record = process_trade_data(trade_data)
+
+    # save to database
+    try:
+        # the unique index is (product_code, datetime)
+        trade_record_id = tr_collection.insert_one(trade_record).inserted_id
+        logger.debug("{}, Inserted to mongoDB with id {}. (Time used: {:.3}ms)".format(
+            trade_record, trade_record_id, (time.time() - start_time) * 1000)
+        )
+    except DuplicateKeyError:
+        logger.debug("Trade ({}, {}) already exists in the database.").format(
+            trade_record['product_code'], trade_record['datetime_str']
+        )
+
+    # append to the deque
+    recent_trade_records.append(trade_record)
+
 def on_open(ws):
     """
     start listening to the websocket
     """
     # Checker Process
-    # global checker_process
-    # checker_process = Process(target=check, args=(ws,))
-    # checker_process.start()
     start_up_msg1 = '{"t":"GL","p":"%s"}' % product
     start_up_msg2 = '{"t":"GPV"}'
     ws.send(start_up_msg1)
@@ -157,9 +228,6 @@ def on_close(ws):
     """
     close the websocket
     """
-    global checker_process
-    if checker_process:
-        checker_process.join(3)  # wait for this process to complete for 3 seconds
     logger.info("### closed ###")
     
 def on_message(ws, message):
@@ -179,65 +247,34 @@ def on_message(ws, message):
     logger.debug(message[:256])
     message = json.loads(message)
     
+    # message type of "Get Now"
     if message.get('t') == 'GN':
         d = message.get('d')
         if d is not None and len(d.split('|')) == 7:
-            start_time = time.time()
-            data = d.split('|')
-            trade_record = dict()
-            trade_record['uuid'] = uuid.uuid4()
+            save_trade_data(d)
 
-            # trade info
-            trade_record['product_id'] = data[0]
-            trade_record['product_code'] = product
-            trade_record['product_name'] = product_name[product]
-            trade_record['datetime'] = get_trade_datetime(data[1])
-            trade_record['datetime_str'] = trade_record['datetime'].isoformat()
-
-            # trade detail
-            trade_record['ask_price'] = int(data[2]) / 10.**price_dot
-            trade_record['bid_price'] = int(data[3]) / 10.**price_dot
-            trade_record['exercise_price'] = int(data[4]) / 10.**price_dot
-
-            # total volume upto this trade
-            curr_volume = int(data[5])
-            trade_record['volume'] = curr_volume
-
-            # amount of this trade
-            if curr_volume == last_volume and len(recent_trade_records) != 0:
-                # race condition occurs with the data from 'GD', use the last record
-                last_volume = recent_trade_records[-1]['volume']
-            elif last_volume > curr_volume and \
-                trade_record['datetime'] > recent_trade_records[-1]['datetime']:
-                # assume it happens only when it starts a new trade history
-                last_volume = 0
-            trade_record['amount'] = curr_volume - last_volume
-            last_volume = curr_volume
-            
-            # TODO: custom measurments
-            if False:
-                pass
-
-            # save to database
-            trade_record_id = tr_collection.insert_one(trade_record).inserted_id
-            logger.debug("{}, Inserted to mongoDB with id {}. (Time used: {:.3}ms)".format(
-                trade_record, trade_record_id, (time.time() - start_time) * 1000)
-            )
-
-            # append to the deque
-            recent_trade_records.append(trade_record)
-
+    # type of "Get Last"
     elif message.get('t') == 'GL':
         price_dot = float(message.get('pd', 0.0))
+
+    # type of "Get Daily"
     elif message.get('t') == 'GD':
         d = message.get('d')
         if d is not None and len(d.split('|')) == 9:
-            data = d.split('|')
-
             # update the updated volume in case the program miss some records
+            data = d.split('|')
             _last_volume = int(data[2])
             if _last_volume > last_volume:
                 last_volume = _last_volume
+    
+    # type of "Get Pic200"
+    elif message.get('t') == 'GP':
+        price_dot = float(message.get('pd', 0.0))
+        d = message.get('d')
+        recent_trade_data = d.split(', ')
+        for trade_data in recent_trade_data:
+            if len(trade_data.split('|')) == 7:
+                save_trade_data(trade_data)
 
 def on_error(ws, error):
     logger.error(error)
