@@ -146,7 +146,8 @@ def process_trade_data(trade_data):
             e.g., 'O1GCJ|11:31:44|13046|13044|13046|220834|'
     """
     assert isinstance(trade_data, str), "String is expected"
-    assert len(trade_data.split('|')) == 7, "Format of '<prod_id>|<trade_time>|<ask_price>|<bid_price>|<exercise_price>|<total_volume>|' is expected."
+    assert len(trade_data.split('|')) == 7, \
+            "Format of '<prod_id>|<trade_time>|<ask_price>|<bid_price>|<exercise_price>|<total_volume>|' is expected."
 
     global price_dot
     global last_volume
@@ -201,8 +202,9 @@ def save_trade_data(trade_data):
     try:
         # the unique index is (product_code, datetime)
         trade_record_id = tr_collection.insert_one(trade_record).inserted_id
-        logger.debug("{}, Inserted to mongoDB with id {}. (Time used: {:.3}ms)".format(
-            trade_record, trade_record_id, (time.time() - start_time) * 1000)
+        logger.debug("Trade ({}, {}), Inserted to mongoDB with _id {}. (Time used: {:.3}ms)".format(
+            trade_record['product_code'], trade_record['datetime_str'], 
+            trade_record_id, (time.time() - start_time) * 1000)
         )
     except DuplicateKeyError:
         logger.debug("Trade ({}, {}) already exists in the database.").format(
