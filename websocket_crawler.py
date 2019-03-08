@@ -288,6 +288,10 @@ if __name__ == "__main__":
         on_error=on_error,
         on_close=on_close
     )
+    
+    run_count = 0
     while True:
-        logger.info("Run websocket")
+        if run_count % 300 == 0:
+            logger.info("Run websocket. ({}-th)".format(run_count))
         ws.run_forever()
+        time.sleep(1)  # sleep for 1 second
