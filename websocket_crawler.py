@@ -36,8 +36,8 @@ def check(ws):
             start_up_msg2 = '{"t":"GPV"}'
             ws.send(start_up_msg1)
             ws.send(start_up_msg2)
-            logger.debug("(check) ws.send({})".format(start_up_msg1))
-            logger.debug("(check) ws.send({})".format(start_up_msg2))
+            logger.debug("[{}] (check) ws.send({})".format(global_vars.PRODUCT_CODE, start_up_msg1))
+            logger.debug("[{}] (check) ws.send({})".format(global_vars.PRODUCT_CODE, start_up_msg2))
 
             now = int(time.time())
             shared_dict['last_check_time'] = now
@@ -52,8 +52,8 @@ def on_open(ws):
     start_up_msg2 = '{"t":"GPV"}'
     ws.send(start_up_msg1)
     ws.send(start_up_msg2)
-    logger.info("(on_open) ws.send({})".format(start_up_msg1))
-    logger.info("(on_open) ws.send({})".format(start_up_msg2))
+    logger.info("[{}] (on_open) ws.send({})".format(global_vars.PRODUCT_CODE, start_up_msg1))
+    logger.info("[{}] (on_open) ws.send({})".format(global_vars.PRODUCT_CODE, start_up_msg2))
 
     # Checker Process
     global checker_process
@@ -67,7 +67,7 @@ def on_close(ws):
     global checker_process
     if checker_process:
         checker_process.join(3)  # wait for this process to complete for 3 seconds
-    logger.info("### closed ###")
+    logger.info("[{}] ### closed ###".format(global_vars.PRODUCT_CODE))
     
 def on_message(ws, message):
     """
@@ -116,7 +116,7 @@ def on_message(ws, message):
                 save_trade_data(trade_data)
 
 def on_error(ws, error):
-    logger.error(error)
+    logger.error("[{}] error: {}".format(global_vars.PRODUCT_CODE, error))
 
 if __name__ == "__main__":
     program_start_time = time.time()
@@ -147,7 +147,9 @@ if __name__ == "__main__":
     run_count = 0
     while True:
         if run_count % 300 == 0:
-            logger.info("Run websocket. ({}-th connection in a day)".format(run_count))
+            logger.info("[{}] Run websocket. ({}-th connection in a day)"\
+            .format(global_vars.PRODUCT_CODE, run_count)
+            )
         ws.run_forever()
         time.sleep(1)  # sleep for 1 second
         run_count += 1
