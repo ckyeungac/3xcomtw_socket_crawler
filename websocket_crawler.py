@@ -1,235 +1,72 @@
 import argparse
-from collections import deque
-import datetime
 import json
-import logging
-from multiprocessing import Process, Manager
-import pytz
 import time
 import websocket
-import yaml
-import uuid
-from pymongo.errors import DuplicateKeyError
-from pymongo import MongoClient
+from collections import deque
+from multiprocessing import Process, Manager
+from crawler_3x import global_vars
+from crawler_3x.logger import logger
+from crawler_3x.trade_utils import save_trade_data
 
 ###############################################
-#                 Configuration               #
+#                 Multithreading              #
 ###############################################
-with open('config.yml', 'r') as f:
-    config = yaml.load(f)
+# Shared memory between process
+manager = Manager()
+shared_dict = manager.dict()
+shared_dict['last_check_time'] = int(time.time())
 
-###############################################
-#                   Argparser                 #
-###############################################
-parser = argparse.ArgumentParser()
-parser.add_argument("--product", type=str, default="O1GC")
-args = parser.parse_args()
-
-# create logger
-logger = logging.getLogger('3xdotcom_websocket_crawler')
-logger.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s -  %(message)s')
-# create file handler which logs even debug messages
-fh = logging.FileHandler('./logs/{}.log'.format(args.product))
-fh.setLevel(logging.INFO)
-fh.setFormatter(formatter)
-logger.addHandler(fh)
-# create console handler with a higher log level
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-ch.setFormatter(formatter)
-logger.addHandler(ch)
-
-###############################################
-#                    Database                 #
-###############################################
-# Database settings
-client = MongoClient(
-    config['mongodb']['address'],
-    username=config['mongodb']['username'],
-    password=config['mongodb']['password'],
-    authSource=config['mongodb']['authSource']
-)
-db = client['trading']
-tr_collection = db['trade_records']
-
-###############################################
-#                  data dict                  #
-###############################################
-product_timezone = {
-    'HSI': pytz.timezone('Asia/Hong_Kong'),  # Heng Seng
-    'HSCE': pytz.timezone('Asia/Hong_Kong'),  # 
-    'IF300': pytz.timezone('Asia/Hong_Kong'),  # Shanghai and Shenzhen index
-    'S2SFC': pytz.timezone('Asia/Hong_Kong'),  # A50
-    'O1GC': pytz.timezone('America/New_York'),  # Gold
-    'M1EC': pytz.timezone('America/Chicago'),  # Euro
-    'B1YM': pytz.timezone('America/Chicago'),  # Mini Dow Jones
-    'N1CL': pytz.timezone('America/New_York'),  # Oil
-    'WTX': pytz.timezone('Asia/Taipei'),  # Taiwan
-    'M1NQ': pytz.timezone('America/Chicago'),  # NasDaq
-    'M1ES': pytz.timezone('America/Chicago'),  # SP500
-}
-
-product_name = {
-    'HSI': "亞洲期指",  # Heng Seng
-    'HSCE': "亞企期指",  # 
-    'IF300': "滬深期指",  # Shanghai and Shenzhen index
-    'S2SFC': "A50",  # A50
-    'O1GC': "紐約期金",  # Gold
-    'M1EC': "歐元期貨",  # Euro
-    'B1YM': "迷你道瓊",  # Mini Dow Jones
-    'N1CL': "小輕原油",  # Oil
-    'WTX': "台灣期指",  # Taiwan
-    'M1NQ': "NasDaq",  # NasDaq
-    'M1ES': "SP500",  # SP500
-}
+# Process 
+checker_process = None
 
 ###############################################
 #                   Websocket                 #
 ###############################################
-# Listening to websocket
-price_dot = 0.0
-last_volume = 0.0
-product = args.product
-recent_trade_records = deque(maxlen=5)
-
-def json_serial(obj):
-    if isinstance(obj, (datetime.date, datetime.datetime)):
-        return obj.isoformat()
-    if isinstance(obj, uuid.UUID):
-        return obj.hex
-
-def get_trade_datetime(t):
+def check(ws):
     """
-    Receive time in format 'HH:MM:SS'. Convert it to a datetime object.
-    Arguments:
-      - t: str
-    
-    Return:
-      - trade_datetime: datetime object with timezone information
+    When we send 
+        - {"t":"GL","p":"<$code>"}, and
+        - {"t": "GPV"}
+    to the websocket of m.3x.com.tw:5490, we will get each trade data of the <$code>
     """
-    trade_time = t.split(':')  # HH:MM:SS
-    trade_hour = int(trade_time[0])
-    trade_minute = int(trade_time[1])
-    trade_second = int(trade_time[2])
-    
-    trade_datetime = datetime.datetime.now(product_timezone[product])
+    check_interval = 20  # in seconds
+    while True:
+        if time.time() - shared_dict['last_check_time'] > check_interval:
+            start_up_msg1 = '{"t":"GL","p":"%s"}' % global_vars.PRODUCT_CODE
+            start_up_msg2 = '{"t":"GPV"}'
+            ws.send(start_up_msg1)
+            ws.send(start_up_msg2)
+            logger.debug("(check) ws.send({})".format(start_up_msg1))
+            logger.debug("(check) ws.send({})".format(start_up_msg2))
 
-    # avoid edge cases
-    _hour = trade_datetime.hour
-    if _hour == 0 and trade_hour == 23:
-        trade_datetime = trade_datetime.replace(
-            hour=trade_hour, minute=trade_minute, second=trade_second, microsecond=1000
-        )
-        trade_datetime = trade_datetime - datetime.timedelta(days=1)
-    else:
-        trade_datetime = trade_datetime.replace(
-            hour=trade_hour, minute=trade_minute, second=trade_second, microsecond=1000
-        )
-
-    # keep the ordering
-    if len(recent_trade_records) != 0:
-        last_trade_datetime = recent_trade_records[-1]['datetime']
-        _last_trade_datetime = last_trade_datetime.replace(microsecond=0)
-        _trade_datetime = trade_datetime.replace(microsecond=0)
-        if _trade_datetime == _last_trade_datetime:
-            trade_datetime = trade_datetime.replace(
-                microsecond=last_trade_datetime.microsecond + 1000
-            )
-    
-    return trade_datetime
-
-def process_trade_data(trade_data):
-    """
-    Parameters:
-        - trade_data: str
-            e.g., 'O1GCJ|11:31:44|13046|13044|13046|220834|'
-    """
-    assert isinstance(trade_data, str), "String is expected"
-    assert len(trade_data.split('|')) == 7, \
-            "Format of '<prod_id>|<trade_time>|<ask_price>|<bid_price>|<exercise_price>|<total_volume>|' is expected."
-
-    global price_dot
-    global last_volume
-
-    # initialization
-    data = trade_data.split('|')
-    trade_record = dict()
-    trade_record['uuid'] = uuid.uuid4()
-
-    # trade info
-    trade_record['product_id'] = data[0]
-    trade_record['product_code'] = product
-    trade_record['product_name'] = product_name[product]
-    trade_record['datetime'] = get_trade_datetime(data[1])
-    trade_record['datetime_str'] = trade_record['datetime'].isoformat()
-
-    # trade detail
-    trade_record['ask_price'] = int(data[2]) / 10.**price_dot
-    trade_record['bid_price'] = int(data[3]) / 10.**price_dot
-    trade_record['exercise_price'] = int(data[4]) / 10.**price_dot
-
-    # total volume upto this trade
-    curr_volume = int(data[5])
-    trade_record['volume'] = curr_volume
-
-    # amount of this trade
-    if len(recent_trade_records) != 0:
-        if curr_volume == last_volume:
-            # race condition occurs with the data from 'GD', use the last record
-            last_volume = recent_trade_records[-1]['volume']
-        elif trade_record['datetime'] > recent_trade_records[-1]['datetime']\
-            and last_volume > curr_volume:
-            # assume it happens only when it starts a new trade history
-            # so set the last_volume to 0
-            last_volume = 0.0
-    trade_record['amount'] = curr_volume - last_volume
-    last_volume = curr_volume
-    
-    # TODO: custom measurments
-    if False:
-        pass
-
-    return trade_record
-
-def save_trade_data(trade_data):
-    global recent_trade_records
-
-    start_time = time.time()
-    trade_record = process_trade_data(trade_data)
-
-    # save to database
-    try:
-        # the unique index is (product_code, datetime)
-        trade_record_id = tr_collection.insert_one(trade_record).inserted_id
-        logger.debug("Trade ({}, {}), Inserted to mongoDB with _id {}. (Time used: {:.3}ms)".format(
-            trade_record['product_code'], trade_record['datetime_str'], 
-            trade_record_id, (time.time() - start_time) * 1000)
-        )
-    except DuplicateKeyError:
-        logger.debug("Trade ({}, {}) already exists in the database.").format(
-            trade_record['product_code'], trade_record['datetime_str']
-        )
-
-    # append to the deque
-    recent_trade_records.append(trade_record)
+            now = int(time.time())
+            shared_dict['last_check_time'] = now
+            time.sleep(check_interval)
 
 def on_open(ws):
     """
     start listening to the websocket
     """
-    # Checker Process
-    start_up_msg1 = '{"t":"GL","p":"%s"}' % product
+    # send request to start listening
+    start_up_msg1 = '{"t":"GL","p":"%s"}' % global_vars.PRODUCT_CODE
     start_up_msg2 = '{"t":"GPV"}'
     ws.send(start_up_msg1)
     ws.send(start_up_msg2)
-    logger.info("ws.send({})".format(start_up_msg1))
-    logger.info("ws.send({})".format(start_up_msg2))
+    logger.info("(on_open) ws.send({})".format(start_up_msg1))
+    logger.info("(on_open) ws.send({})".format(start_up_msg2))
+
+    # Checker Process
+    global checker_process
+    checker_process = Process(target=check, args=(ws,))
+    checker_process.start()
 
 def on_close(ws):
     """
     close the websocket
     """
+    global checker_process
+    if checker_process:
+        checker_process.join(3)  # wait for this process to complete for 3 seconds
     logger.info("### closed ###")
     
 def on_message(ws, message):
@@ -243,9 +80,6 @@ def on_message(ws, message):
         't': 'GN'
     }
     """
-    global price_dot
-    global last_volume
-    
     logger.debug(message[:256])
     message = json.loads(message)
     
@@ -254,10 +88,13 @@ def on_message(ws, message):
         d = message.get('d')
         if d is not None and len(d.split('|')) == 7:
             save_trade_data(d)
+        
+        now = int(time.time())
+        shared_dict['last_check_time'] = now
 
     # type of "Get Last"
     elif message.get('t') == 'GL':
-        price_dot = float(message.get('pd', 0.0))
+        global_vars.PRICE_DOT = float(message.get('pd', 0.0))
 
     # type of "Get Daily"
     elif message.get('t') == 'GD':
@@ -267,11 +104,11 @@ def on_message(ws, message):
             data = d.split('|')
             _last_volume = int(data[2])
             if _last_volume > last_volume:
-                last_volume = _last_volume
+                global_vars.LAST_VOLUME = _last_volume
     
     # type of "Get Pic200"
     elif message.get('t') == 'GP':
-        price_dot = float(message.get('pd', 0.0))
+        global_vars.PRICE_DOT = float(message.get('pd', 0.0))
         d = message.get('d')
         recent_trade_data = d.split(', ')
         for trade_data in recent_trade_data:
@@ -283,6 +120,20 @@ def on_error(ws, error):
 
 if __name__ == "__main__":
     program_start_time = time.time()
+
+    # argument parser
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--product", type=str, default="O1GC")
+    args = parser.parse_args()
+
+    # initialize the global variables
+    global_vars.init()
+    global_vars.PRODUCT_CODE = args.product    
+    global_vars.RECENT_TRADE_RECORDS = deque(maxlen=5)
+    global_vars.LAST_VOLUME = 0.0
+    global_vars.PRICE_DOT = 0.0
+
+    # initialize websocket
     websocket.enableTrace(True)
     ws = websocket.WebSocketApp(
         "ws://m.3x.com.tw:5490",
@@ -292,6 +143,7 @@ if __name__ == "__main__":
         on_close=on_close
     )
     
+    # run the websocket
     run_count = 0
     while True:
         if run_count % 300 == 0:
@@ -300,4 +152,5 @@ if __name__ == "__main__":
         time.sleep(1)  # sleep for 1 second
         run_count += 1
         if time.time() - program_start_time > 3600*24:
+            program_start_time = time.time()
             run_count = 0

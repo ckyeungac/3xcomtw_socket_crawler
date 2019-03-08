@@ -12,3 +12,4 @@ websocket-client==0.40.0
 pymongo==3.7.2
 numpy==1.16.2
 wsaccel==0.6.2
+pyyaml==3.13
