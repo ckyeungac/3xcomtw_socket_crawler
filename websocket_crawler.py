@@ -280,6 +280,7 @@ def on_error(ws, error):
     logger.error(error)
 
 if __name__ == "__main__":
+    program_start_time = time.time()
     websocket.enableTrace(True)
     ws = websocket.WebSocketApp(
         "ws://m.3x.com.tw:5490",
@@ -292,6 +293,9 @@ if __name__ == "__main__":
     run_count = 0
     while True:
         if run_count % 300 == 0:
-            logger.info("Run websocket. ({}-th)".format(run_count))
+            logger.info("Run websocket. ({}-th connection in a day)".format(run_count))
         ws.run_forever()
         time.sleep(1)  # sleep for 1 second
+        run_count += 1
+        if time.time() - program_start_time > 3600*24:
+            run_count = 0
