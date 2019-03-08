@@ -103,7 +103,7 @@ def on_message(ws, message):
             # update the updated volume in case the program miss some records
             data = d.split('|')
             _last_volume = int(data[2])
-            if _last_volume > last_volume:
+            if _last_volume > global_vars.LAST_VOLUME:
                 global_vars.LAST_VOLUME = _last_volume
     
     # type of "Get Pic200"
