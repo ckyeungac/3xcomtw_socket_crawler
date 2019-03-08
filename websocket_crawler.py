@@ -114,6 +114,7 @@ def on_message(ws, message):
         for trade_data in recent_trade_data:
             if len(trade_data.split('|')) == 7:
                 save_trade_data(trade_data)
+                time.sleep(5/1000)  # sleep for 5ms for performance issue
 
 def on_error(ws, error):
     logger.error("[{}] error: {}".format(global_vars.PRODUCT_CODE, error))
