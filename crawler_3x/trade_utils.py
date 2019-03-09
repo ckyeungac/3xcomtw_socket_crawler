@@ -1,19 +1,19 @@
 import datetime
 import time
 import uuid
-from threading import Lock
-from multiprocessing import Process, Lock
 from pymongo.errors import DuplicateKeyError
 from crawler_3x import global_vars
 from crawler_3x.constants import product_timezone, product_name
-from crawler_3x.db import tr_collection
+from crawler_3x.db import tr_collection, ohlc_collection
 from crawler_3x.logger import logger
 
-###############################################
-#                 Multithreading              #
-###############################################
-save_trade_data_lock = Lock()
 
+def process_tick(trade_data):
+    trade_record = process_trade_data(trade_data)
+    ohlc_record = get_ohlc_record(trade_record)
+    
+    save_trade_record(trade_record)
+    update_ohlc_record(ohlc_record)
 
 ###############################################
 #           Trade Record Processing           #
@@ -66,7 +66,6 @@ def get_trade_datetime(t):
     
     return trade_datetime
 
-
 # TODO: add custom measurments
 def process_trade_data(trade_data):
     """
@@ -74,7 +73,7 @@ def process_trade_data(trade_data):
         - trade_data: str
             e.g., 'O1GCJ|11:31:44|13046|13044|13046|220834|'
     """
-    assert isinstance(trade_data, str), "String is expected"
+    assert isinstance(trade_data, str), "String is expected. {} received".format(type(trade_data))
     assert len(trade_data.split('|')) == 7, \
             "Format of '<prod_id>|<trade_time>|<ask_price>|<bid_price>|<exercise_price>|<total_volume>|' is expected."
     
@@ -102,7 +101,7 @@ def process_trade_data(trade_data):
     trade_record['exercise_price'] = int(data[4]) / 10.**price_dot
 
     # total volume upto this trade
-    curr_volume = int(data[5])
+    curr_volume = float(data[5])
     trade_record['volume'] = curr_volume
 
     # amount of this trade
@@ -123,13 +122,11 @@ def process_trade_data(trade_data):
 
     return trade_record
 
-def _save_trade_data(trade_data):
-    # forbid other process to save the trade data
-    save_trade_data_lock.acquire()
-
-    # start processing
+###############################################
+#              Save Trade Record              #
+###############################################
+def save_trade_record(trade_record):
     start_time = time.time()
-    trade_record = process_trade_data(trade_data)
 
     # save to database
     try:
@@ -137,19 +134,63 @@ def _save_trade_data(trade_data):
         trade_record_id = tr_collection.insert_one(trade_record).inserted_id
         logger.debug("Trade ({}, {}), Inserted to mongoDB with _id {}. (Time used: {:.3}ms)".format(
             trade_record['product_code'], trade_record['datetime_str'], 
-            trade_record_id, (time.time() - start_time) * 1000)
-        )
+            trade_record_id, (time.time() - start_time) * 1000
+        ))
     except DuplicateKeyError:
-        logger.debug("Trade ({}, {}) already exists in the database.").format(
+        logger.debug("Trade ({}, {}) already exists in the database.".format(
             trade_record['product_code'], trade_record['datetime_str']
         )
+    )
 
     # append to the deque
     global_vars.RECENT_TRADE_RECORDS.append(trade_record)
 
-    # allow other process to save the trade data
-    save_trade_data_lock.release()
+###############################################
+#                OHLC Processing              #
+###############################################
+def update_ohlc_record(ohlc_record):
+    # start processing
+    start_time = time.time()
 
-def save_trade_data(trade_data):
-    save_process = Process(target=_save_trade_data, args=(trade_data,))
-    save_process.start()
+    product_code = ohlc_record['product_code']
+    ohlc_datetime = ohlc_record['datetime']
+    _ohlc_record = ohlc_collection.replace_one(
+        {"product_code": product_code, "datetime": ohlc_datetime},
+        ohlc_record, 
+        True
+    )
+
+    logger.debug("Trade ({}, {}), Updated to mongoDB with {}. (Time used: {:.3}ms)".format(
+        product_code, ohlc_datetime, _ohlc_record.upserted_id, (time.time() - start_time) * 1000
+    ))
+
+def get_ohlc_record(trade_record):
+    # trade info
+    trade_datetime = trade_record['datetime']
+    trade_price = trade_record['exercise_price']
+    trade_amount = trade_record['amount']
+    product_code = trade_record['product_code']
+
+    # get or create the ohlc
+    ohlc_datetime = trade_record['datetime'].replace(second=0, microsecond=0)
+    query = {"product_code": product_code, "datetime": ohlc_datetime}
+    ohlc_record = ohlc_collection.find_one(query)
+
+    if ohlc_record is not None:
+        # update the OHLC record
+        ohlc_record['close'] = trade_price
+        ohlc_record['high'] = trade_price if trade_price > ohlc_record['high'] else ohlc_record['high']
+        ohlc_record['low'] = trade_price if trade_price < ohlc_record['low'] else ohlc_record['low']
+        ohlc_record['volume'] = ohlc_record['volume'] + trade_amount
+    else:
+        # create a new OHLC record
+        ohlc_record = dict()
+        ohlc_record['product_code'] = product_code
+        ohlc_record['datetime'] = ohlc_datetime
+        ohlc_record['open'] = trade_price
+        ohlc_record['high'] = trade_price
+        ohlc_record['low'] = trade_price
+        ohlc_record['close'] = trade_price
+        ohlc_record['volume'] = trade_amount
+
+    return ohlc_record

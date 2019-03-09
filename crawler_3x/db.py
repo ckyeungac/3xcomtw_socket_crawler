@@ -13,13 +13,23 @@ client = MongoClient(
     authSource=config['mongodb']['authSource']
 )
 db = client['trading']
-tr_collection = db['trade_records']
 
-# create index for the tr_collection
+# trade record
+tr_collection = db['trade_records']
 tr_collection.create_index(
     keys=[("product_code", pymongo.ASCENDING),
           ("datetime", pymongo.DESCENDING)],
     name="_trade_id",
+    background=True,
+    unique=True
+)
+
+# 1min OHLC
+ohlc_collection = db['trade_ohlc']
+ohlc_collection.create_index(
+    keys=[("product_code", pymongo.ASCENDING),
+          ("datetime", pymongo.DESCENDING)],
+    name="_ohlc_id",
     background=True,
     unique=True
 )

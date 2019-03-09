@@ -1,13 +1,14 @@
 import argparse
 import json
 import time
+import datetime
 import websocket
 from collections import deque
 from multiprocessing import Process, Manager
 from crawler_3x import global_vars
 from crawler_3x.constants import product_timezone
 from crawler_3x.logger import logger
-from crawler_3x.trade_utils import save_trade_data
+from crawler_3x.trade_utils import process_tick
 
 ###############################################
 #                 Multithreading              #
@@ -96,7 +97,7 @@ def on_message(ws, message):
     if message.get('t') == 'GN':
         d = message.get('d')
         if d is not None and len(d.split('|')) == 7:
-            save_trade_data(d)
+            process_tick(d)
         
         shared_dict['last_check_time'] = int(time.time())
 
@@ -121,8 +122,7 @@ def on_message(ws, message):
         recent_trade_data = d.split(', ')
         for trade_data in recent_trade_data:
             if len(trade_data.split('|')) == 7:
-                save_trade_data(trade_data)
-                time.sleep(5/1000)  # sleep for 5ms for performance issue
+                process_tick(trade_data)
 
 def on_error(ws, error):
     logger.error("[{}] error: {}".format(global_vars.PRODUCT_CODE, error))
@@ -156,7 +156,7 @@ if __name__ == "__main__":
     while True:
         if run_count % 300 == 0:
             logger.info("[{}] Run websocket. ({}-th connection in a day)"\
-            .format(global_vars.PRODUCT_CODE, run_count)
+                        .format(global_vars.PRODUCT_CODE, run_count)
             )
         ws.run_forever()
         time.sleep(1)  # sleep for 1 second
