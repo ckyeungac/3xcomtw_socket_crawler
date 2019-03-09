@@ -5,6 +5,7 @@ import websocket
 from collections import deque
 from multiprocessing import Process, Manager
 from crawler_3x import global_vars
+from crawler_3x.constants import product_timezone
 from crawler_3x.logger import logger
 from crawler_3x.trade_utils import save_trade_data
 
@@ -16,7 +17,7 @@ manager = Manager()
 shared_dict = manager.dict()
 shared_dict['last_check_time'] = int(time.time())
 
-# Process 
+# Process
 checker_process = None
 
 ###############################################
@@ -29,8 +30,16 @@ def check(ws):
         - {"t": "GPV"}
     to the websocket of m.3x.com.tw:5490, we will get each trade data of the <$code>
     """
-    check_interval = 20  # in seconds
+    product_code = global_vars.PRODUCT_CODE
+    timezone = product_timezone.get(product_code)
+    check_interval = 10  # in second
     while True:
+        # if it is Saturday or Sunday, sleep for longer time
+        if datetime.datetime.now().isoweekday(timezone) in [6, 7]:
+            check_interval = 3600  # 1 hour
+        else:
+            check_interval = 10  # 10 seconds
+
         if time.time() - shared_dict['last_check_time'] > check_interval:
             start_up_msg1 = '{"t":"GL","p":"%s"}' % global_vars.PRODUCT_CODE
             start_up_msg2 = '{"t":"GPV"}'
@@ -38,10 +47,9 @@ def check(ws):
             ws.send(start_up_msg2)
             logger.debug("[{}] (check) ws.send({})".format(global_vars.PRODUCT_CODE, start_up_msg1))
             logger.debug("[{}] (check) ws.send({})".format(global_vars.PRODUCT_CODE, start_up_msg2))
+            shared_dict['last_check_time'] = int(time.time())
 
-            now = int(time.time())
-            shared_dict['last_check_time'] = now
-            time.sleep(check_interval)
+        time.sleep(check_interval)
 
 def on_open(ws):
     """
@@ -54,6 +62,7 @@ def on_open(ws):
     ws.send(start_up_msg2)
     logger.info("[{}] (on_open) ws.send({})".format(global_vars.PRODUCT_CODE, start_up_msg1))
     logger.info("[{}] (on_open) ws.send({})".format(global_vars.PRODUCT_CODE, start_up_msg2))
+    shared_dict['last_check_time'] = int(time.time())
 
     # Checker Process
     global checker_process
@@ -89,8 +98,7 @@ def on_message(ws, message):
         if d is not None and len(d.split('|')) == 7:
             save_trade_data(d)
         
-        now = int(time.time())
-        shared_dict['last_check_time'] = now
+        shared_dict['last_check_time'] = int(time.time())
 
     # type of "Get Last"
     elif message.get('t') == 'GL':
@@ -120,8 +128,6 @@ def on_error(ws, error):
     logger.error("[{}] error: {}".format(global_vars.PRODUCT_CODE, error))
 
 if __name__ == "__main__":
-    program_start_time = time.time()
-
     # argument parser
     parser = argparse.ArgumentParser()
     parser.add_argument("--product", type=str, default="O1GC")
@@ -145,6 +151,7 @@ if __name__ == "__main__":
     )
     
     # run the websocket
+    websocket_start_time = time.time()
     run_count = 0
     while True:
         if run_count % 300 == 0:
@@ -154,6 +161,6 @@ if __name__ == "__main__":
         ws.run_forever()
         time.sleep(1)  # sleep for 1 second
         run_count += 1
-        if time.time() - program_start_time > 3600*24:
-            program_start_time = time.time()
+        if time.time() - websocket_start_time > 3600*24:
+            websocket_start_time = time.time()
             run_count = 0
