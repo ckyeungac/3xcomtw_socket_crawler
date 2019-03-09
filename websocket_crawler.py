@@ -36,7 +36,7 @@ def check(ws):
     check_interval = 10  # in second
     while True:
         # if it is Saturday or Sunday, sleep for longer time
-        if datetime.datetime.now().isoweekday(timezone) in [6, 7]:
+        if datetime.datetime.now(timezone).isoweekday() in [6, 7]:
             check_interval = 3600  # 1 hour
         else:
             check_interval = 10  # 10 seconds
