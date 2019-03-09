@@ -1,12 +1,23 @@
 import datetime
 import time
 import uuid
+from threading import Lock
+from multiprocessing import Process, Lock
 from pymongo.errors import DuplicateKeyError
 from crawler_3x import global_vars
 from crawler_3x.constants import product_timezone, product_name
 from crawler_3x.db import tr_collection
 from crawler_3x.logger import logger
 
+###############################################
+#                 Multithreading              #
+###############################################
+save_trade_data_lock = Lock()
+
+
+###############################################
+#           Trade Record Processing           #
+###############################################
 def json_serial(obj):
     if isinstance(obj, (datetime.date, datetime.datetime)):
         return obj.isoformat()
@@ -106,14 +117,17 @@ def process_trade_data(trade_data):
             # so set the last_volume to 0
             last_volume = 0.0
     trade_record['amount'] = curr_volume - last_volume
-    last_volume = curr_volume
 
     # update the global last_volume
-    global_vars.LAST_VOLUME = last_volume
+    global_vars.LAST_VOLUME = curr_volume
 
     return trade_record
 
-def save_trade_data(trade_data):
+def _save_trade_data(trade_data):
+    # forbid other process to save the trade data
+    save_trade_data_lock.acquire()
+
+    # start processing
     start_time = time.time()
     trade_record = process_trade_data(trade_data)
 
@@ -132,3 +146,10 @@ def save_trade_data(trade_data):
 
     # append to the deque
     global_vars.RECENT_TRADE_RECORDS.append(trade_record)
+
+    # allow other process to save the trade data
+    save_trade_data_lock.release()
+
+def save_trade_data(trade_data):
+    save_process = Process(target=_save_trade_data, args=(trade_data,))
+    save_process.start()
