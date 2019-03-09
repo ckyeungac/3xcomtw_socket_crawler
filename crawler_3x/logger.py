@@ -2,7 +2,7 @@ import logging
 import datetime
 
 # create logger
-logger = logging.getLogger('3xdotcom_websocket_crawler')
+logger = logging.getLogger('3xdotcom_crawler')
 logger.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s -  %(message)s')
 # create file handler which logs even debug messages
