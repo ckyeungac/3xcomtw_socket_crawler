@@ -35,24 +35,30 @@ def check(ws):
     timezone = product_timezone.get(product_code)
     check_interval = 10  # in second
     while True:
+        if not ws.sock.connected:
+            break
+
         # if it is Saturday or Sunday, sleep for longer time
         if datetime.datetime.now(timezone).isoweekday() in [6, 7]:
             check_interval = 3600  # 1 hour
         else:
             check_interval = 10  # 10 seconds
 
-        if time.time() - shared_dict['last_check_time'] > check_interval:
-            start_up_msg1 = '{"t":"GL","p":"%s"}' % global_vars.PRODUCT_CODE
-            start_up_msg2 = '{"t":"GPV"}'
-            ws.send(start_up_msg1)
-            ws.send(start_up_msg2)
-            logger.debug("[{}] (check) ws.send({})".format(global_vars.PRODUCT_CODE, start_up_msg1))
-            logger.debug("[{}] (check) ws.send({})".format(global_vars.PRODUCT_CODE, start_up_msg2))
-            shared_dict['last_check_time'] = int(time.time())
+        try:
+            if time.time() - shared_dict['last_check_time'] > check_interval:
+                start_up_msg1 = '{"t":"GL","p":"%s"}' % global_vars.PRODUCT_CODE
+                start_up_msg2 = '{"t":"GPV"}'
+                ws.send(start_up_msg1)
+                ws.send(start_up_msg2)
+                logger.debug("[{}] (check) ws.send({})".format(global_vars.PRODUCT_CODE, start_up_msg1))
+                logger.debug("[{}] (check) ws.send({})".format(global_vars.PRODUCT_CODE, start_up_msg2))
+                shared_dict['last_check_time'] = int(time.time())
+        except websocket.WebSocketException as e:
+            logger.error("WebSocketException: {}".format(e))
+            ws.close()
+            break
 
         time.sleep(check_interval)
-        if not ws.sock.connected:
-            break
 
 def on_open(ws):
     """
