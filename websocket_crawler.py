@@ -51,6 +51,8 @@ def check(ws):
             shared_dict['last_check_time'] = int(time.time())
 
         time.sleep(check_interval)
+        if not ws.sock.connected:
+            break
 
 def on_open(ws):
     """
