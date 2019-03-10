@@ -2,6 +2,7 @@ import datetime
 import time
 import uuid
 from pymongo.errors import DuplicateKeyError
+from multiprocessing import Process
 from crawler_3x import global_vars
 from crawler_3x.constants import product_timezone, product_name
 from crawler_3x.db import tr_collection, ohlc_collection
@@ -9,11 +10,15 @@ from crawler_3x.logger import logger
 
 
 def process_tick(trade_data):
+    # get the basic information of the trade data
     trade_record = process_trade_data(trade_data)
+
+    # update and save the ohlc data
     ohlc_record = get_ohlc_record(trade_record)
-    
-    save_trade_record(trade_record)
     update_ohlc_record(ohlc_record)
+
+    # further massage and save the trade_record
+    save_trade_record(trade_record)
 
 ###############################################
 #           Trade Record Processing           #
@@ -66,7 +71,6 @@ def get_trade_datetime(t):
     
     return trade_datetime
 
-# TODO: add custom measurments
 def process_trade_data(trade_data):
     """
     Parameters:
@@ -108,10 +112,10 @@ def process_trade_data(trade_data):
     if len(recent_trade_records) != 0:
         # if race condition occurs with the data from 'GD', use the last record
         if curr_volume == last_volume:
-            last_volume = RECENT_TRADE_RECORDS[-1]['volume']
+            last_volume = recent_trade_records[-1]['volume']
         # if (current time > last time) but (current volume < last volume)
         elif trade_record['datetime'] > recent_trade_records[-1]['datetime']\
-            and curr_volume < last_volume:
+            and curr_volume < recent_trade_records[-1]['volume']:
             # assume it happens only when it starts a new trade history
             # so set the last_volume to 0
             last_volume = 0.0
@@ -125,6 +129,16 @@ def process_trade_data(trade_data):
 ###############################################
 #              Save Trade Record              #
 ###############################################
+# TODO
+def massage_and_save_trade_record(trade_record):
+    _process = Process(target=_massage_and_save_trade_record, args=(trade_record,))
+    _process.start()
+    
+# TODO
+def _massage_and_save_trade_record(trade_record):
+    # TODO: a threading process of massaging the trade record.
+    save_trade_record(trade_record)
+
 def save_trade_record(trade_record):
     start_time = time.time()
 
