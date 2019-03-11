@@ -84,7 +84,11 @@ def on_close(ws):
     """
     global checker_process
     if checker_process:
-        checker_process.join(3)  # wait for this process to complete for 3 seconds
+        logger.info("[{}] ###  Terminating pid: {}".format(
+            global_vars.PRODUCT_CODE, checker_process.pid
+        ))
+        checker_process.terminate()  # terminate the process 
+        checker_process.join()  # wait for this process to complete
     logger.info("[{}] ### closed ###".format(global_vars.PRODUCT_CODE))
     
 def on_message(ws, message):

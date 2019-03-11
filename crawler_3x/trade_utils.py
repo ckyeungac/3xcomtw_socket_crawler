@@ -13,12 +13,14 @@ def process_tick(trade_data):
     # get the basic information of the trade data
     trade_record = process_trade_data(trade_data)
 
-    # update and save the ohlc data
-    ohlc_record = get_ohlc_record(trade_record)
-    update_ohlc_record(ohlc_record)
-
     # further massage and save the trade_record
-    save_trade_record(trade_record)
+    is_saved = save_trade_record(trade_record)
+
+    # update and save the ohlc data
+    if is_saved:
+        ohlc_record = get_ohlc_record(trade_record)
+        update_ohlc_record(ohlc_record)
+
 
 ###############################################
 #           Trade Record Processing           #
@@ -140,6 +142,10 @@ def _massage_and_save_trade_record(trade_record):
     save_trade_record(trade_record)
 
 def save_trade_record(trade_record):
+    """
+    Save the trade_record to the database. 
+    Return True if it is saved successfully.
+    """
     start_time = time.time()
 
     # save to database
@@ -150,14 +156,17 @@ def save_trade_record(trade_record):
             trade_record['product_code'], trade_record['datetime_str'], 
             trade_record_id, (time.time() - start_time) * 1000
         ))
+        
+        # append to the deque
+        global_vars.RECENT_TRADE_RECORDS.append(trade_record)
+        return True
     except DuplicateKeyError:
         logger.debug("Trade ({}, {}) already exists in the database.".format(
             trade_record['product_code'], trade_record['datetime_str']
-        )
-    )
-
-    # append to the deque
-    global_vars.RECENT_TRADE_RECORDS.append(trade_record)
+        ))
+        return False
+    
+    return True
 
 ###############################################
 #                OHLC Processing              #
@@ -186,7 +195,7 @@ def get_ohlc_record(trade_record):
     product_code = trade_record['product_code']
 
     # get or create the ohlc
-    ohlc_datetime = trade_record['datetime'].replace(second=0, microsecond=0)
+    ohlc_datetime = trade_datetime.replace(second=0, microsecond=0)
     query = {"product_code": product_code, "datetime": ohlc_datetime}
     ohlc_record = ohlc_collection.find_one(query)
 
@@ -201,6 +210,7 @@ def get_ohlc_record(trade_record):
         ohlc_record = dict()
         ohlc_record['product_code'] = product_code
         ohlc_record['datetime'] = ohlc_datetime
+        ohlc_record['datetime_str'] = ohlc_datetime.isoformat()
         ohlc_record['open'] = trade_price
         ohlc_record['high'] = trade_price
         ohlc_record['low'] = trade_price
