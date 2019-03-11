@@ -122,7 +122,7 @@ def process_trade_data(trade_data):
             # so set the last_volume to 0
             last_volume = 0.0
     else:
-        if curr_volume < recent_trade_records[-1]['volume']:
+        if curr_volume < last_volume:
             last_volume = 0.0
     trade_record['amount'] = curr_volume - last_volume
 
