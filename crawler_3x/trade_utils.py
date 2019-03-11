@@ -121,6 +121,9 @@ def process_trade_data(trade_data):
             # assume it happens only when it starts a new trade history
             # so set the last_volume to 0
             last_volume = 0.0
+    else:
+        if curr_volume < recent_trade_records[-1]['volume']:
+            last_volume = 0.0
     trade_record['amount'] = curr_volume - last_volume
 
     # update the global last_volume
