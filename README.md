@@ -36,7 +36,7 @@ bash start_crawling_script.sh
 ## Set up scheduled run
 
 ```terminal
-0 * * * * /bin/bash -c "/home/chunkit/projects/3xcomtw_socket_crawler/cronjob_script.sh"
+0 * * * * /bin/bash "/home/chunkit/projects/3xcomtw_socket_crawler/cronjob_script.sh"
 ```
 
 ## Claim
