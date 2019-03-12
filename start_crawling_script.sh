@@ -1,4 +1,5 @@
 #!/bin/bash
+cd /home/chunkit/projects/3xcomtw_socket_crawler
 python websocket_crawler.py --product M1ES &
 python websocket_crawler.py --product M1NQ &
 python websocket_crawler.py --product WTX &
