@@ -1,5 +1,5 @@
 #!/bin/bash
-source /home/chunkit/miniconda3/etc/profile.d/conda.sh
+source /home/chunkit/.bashrc
 source activate trading
 screen -XS trading quit  # kill the current screen
 screen -dmS trading  # start a new detached screen
