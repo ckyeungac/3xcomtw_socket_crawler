@@ -6,7 +6,6 @@ This is a crawler that listens to the websocket of [3x.com.tw](3x.com.tw).
 
 ## Todo
 
-- Terminate the multiprocessing process when the websocket's connection is close.
 - Continous integration and deployment of the crawler
   - How can we keep crawl the data without duplication or missing during deployment?
   - How can we update the trade data when we implement new measurements?
@@ -32,6 +31,12 @@ Run multiple crawlers to listen all future products
 
 ```terminal
 bash start_crawling_script.sh
+```
+
+## Set up scheduled run
+
+```terminal
+00 00/6 * * * /bin/bash -c "/home/chunkit/projects/3xcomtw_socket_crawler/cronjob_script.sh"
 ```
 
 ## Claim
