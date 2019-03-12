@@ -1,4 +1,5 @@
 #!/bin/bash
+source activate trading
 screen -XS trading quit  # kill the current screen
 screen -dmS trading  # start a new detached screen
 screen -S trading -X stuff "
